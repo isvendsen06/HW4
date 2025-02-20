@@ -1,0 +1,254 @@
+---
+title: "HW4"
+author: "Isabelle Svendsen"
+date: "2025-02-19"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(tidyverse)
+library(dplyr)
+library(mosaic)
+library(kableExtra)
+
+```
+
+Isabelle Svendsen EID: iks294 Github Link: https://github.com/isvendsen06/HW4
+
+
+# **Problem 1.**
+
+The null hypothesis that is being tested is that the trades from the Iron Bank are at baseline rate of being flagged which is 2.4%.
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+#monte carlo simulation 
+sim_flag = do(10000)*nflip(n=2021, p=0.024)
+
+ggplot(sim_flag) + 
+  geom_histogram(aes(x=nflip), binwidth=1) +
+  labs(title = "The Probability distribution of the test statistic", x= "Number of Trades Flagged", y= "Counts")
+
+sum_over_70 = sum(sim_flag >= 70)
+
+p_value <- sum(sim_flag >= 70)/10000
+p_value
+
+
+```
+ 
+Since the p_value is less the 0.05 it suggests that the observed data of 70 flagged trades is unlikely to have occurred under the null hypothesis, which means that the 70 flagged trades from Iron Bank are getting flagged at a higher rate then the baseline.
+
+
+# ** Problem 2.**
+
+The null hypothesis that is being tested is Gourmet Bites inspection rate that ends in a violation is consistent with the baseline rate of 3% for that average restaurants in the city that are cited for health code violations.
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+sim_inspect = do(10000)*nflip(n=50, p=0.03)
+
+ggplot(sim_inspect) + 
+  geom_histogram(aes(x=nflip), binwidth=1) +
+  labs(title = "The Probability distribution of the test statistic", x= "Inspections Resulting in Health Violations", y= "Counts")
+
+sum_over_8 = sum(sim_inspect >= 8)
+
+p_value = sum(sim_inspect >= 8)/10000
+
+p_value
+```
+
+The p-value is less then 0.05, this shows that the null hypothesis is unlikely and that Gourmet Bites may have a higher violation rate than the citywide average.
+
+# **Problem 3.**
+
+Null Hypothesis: The distribution of jurors empaneled by the judge is the same as the distribution of the county’s eligible jury pool. In other words, there is no racial bias in the jury selection process. 
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+
+observed_counts <- c(85, 56, 59, 27, 13)
+
+expected_distribution <- c(0.3, 0.25, 0.2, 0.15, 0.1)
+
+
+tib <- tibble(observed = observed_counts, expected = expected_distribution*240)
+kable(tib)
+
+#trial one with just 
+simulated_counts = rmultinom(1, 240, expected_distribution)
+
+difference = simulated_counts - 240*expected_distribution
+
+chi_squared_statistic = function(observed, expected) {
+  sum((observed - expected)^2 / expected)
+}
+
+chi2 = chi_squared_statistic(simulated_counts, 240*expected_distribution)
+
+
+
+#simulation to find the chi-squared 
+num_simulations = 10000
+chi2_sim = do(num_simulations)*{
+  simulated_counts = rmultinom(1, 240, expected_distribution)
+  this_chi2 = chi_squared_statistic(simulated_counts, 240*expected_distribution)
+  c(chi2 = this_chi2) # return a vector with names and values
+}
+
+ggplot(chi2_sim) + 
+  geom_histogram(aes(x=chi2)) +
+  labs(title="The distributions of Chi-Sqaured", x= "Chi-Sqaured Value", y="Counts")
+
+
+# my crazy bag
+my_chi2 = chi_squared_statistic(observed_counts, 240*expected_distribution)
+
+#find p-value
+chi2_sim %>%
+  summarize(p_value = (count(chi2 >= my_chi2)/n()))
+
+```
+
+By using a chi squared statistic of the expected and observed counts shown in the table above, you can create a simulation that would show the expected counts for the jurors based on the null hypothesis being true. The graph above shows the distribution of the Chi-squared values. Since the p_value is less the 0.05, I reject the null hypothesis and conclude that the distribution of jurors empaneled by the judge is different from the county’s population proportions. This would suggest that there is evidence of bias in the judge and his jury selection process.
+
+# **Problem 4.**
+
+## Part 1.
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+#import dataset
+brown_sentences <- readLines("brown_sentences.txt")
+letter_frequencies = read.csv("letter_frequencies.csv")
+
+# 2. process the data, cleaning
+clean_text = gsub("[^A-Za-z] ", "", brown_sentences)
+clean_text = toupper(clean_text)
+
+
+#combine all sentences
+combine_text = paste(clean_text, sep = "")
+
+# 2 occurrences of each letter in all the text 
+observed_counts = table(factor(strsplit(combine_text, "")[[1]]))
+
+
+# expected counts
+total = sum(observed_counts)
+
+
+# frequency 
+letter_freq = function(sentence) {
+  sentence = gsub("[^A-Za-z] ", "", sentence)
+  sentence = toupper(sentence) 
+  
+  letter_count = table(factor(strsplit(sentence, "")[[1]]))
+  length_sentence = nchar(sentence)
+  expected_letter = nchar(sentence)*letter_frequencies$Probability
+  
+  return(letter_count)
+  return(expected_letter)
+}
+
+frequency_list <- list()
+
+for (i in 1:length(clean_text)) {
+  frequency_list[[i]] = letter_freq(clean_text[i])
+}
+# creating function for the expected frequency 
+expected_frequency = function(sentence) {
+  sentence = gsub("[^A-Za-z] ", "", sentence)
+  sentence = toupper(sentence) 
+  
+  letter_count = table(factor(strsplit(sentence, "")[[1]]))
+  expected_letter = nchar(sentence)*letter_frequencies$Probability
+  names(expected_letter) = names(letter_frequencies$Letter)
+  
+  return(expected_letter)
+}
+
+frequency_list <- list()
+expected_list <- list()
+
+for (i in 1:length(clean_text)) {
+  frequency_list[[i]] = letter_freq(clean_text[i])
+  expected_list[[i]] = expected_frequency(clean_text[i])
+}
+
+brown_sentence_frequency = tibble(clean_text, frequency_list, expected_list)
+
+#calculate chi squared
+calculate_chi_squared = function(sentence, freq_table) {
+  
+  # Ensure letter frequencies are normalized and sum to 1
+  freq_table$Probability = freq_table$Probability / sum(freq_table$Probability)
+  
+  # Remove non-letters and convert to uppercase
+  clean_text = gsub("[^A-Za-z]", "", sentence)
+  clean_text = toupper(clean_text)
+  
+  # Count the occurrences of each letter in the sentence
+  observed_counts = table(factor(strsplit(clean_text, "")[[1]], levels = freq_table$Letter))
+  
+  # Calculate expected counts
+  total_letters = sum(observed_counts)
+  expected_counts = total_letters * freq_table$Probability
+  
+  # Chi-squared statistic
+  chi_squared_stat = sum((observed_counts - expected_counts)^2 / expected_counts)
+  
+  return(chi_squared_stat)
+}
+chi2_values = length(brown_sentences)
+
+for(i in 1:length(brown_sentences)) {
+  chi2_values[i] = calculate_chi_squared(brown_sentences[i], letter_frequencies)
+}
+brown_sentence_frequency = tibble(clean_text, frequency_list, expected_list, chi2_values)
+
+ggplot(brown_sentence_frequency) +
+  geom_histogram(aes(x= chi2_values)) +
+  labs(title= "The Distribution of Chi Squared Values", x= "Chi Squared Values", y= "Count")
+```
+
+
+
+
+## Part B.
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+test_sentences <- c(
+  "She opened the book and started to read the first chapter, eagerly anticipating what might come next.", 
+  "Despite the heavy rain, they decided to go for a long walk in the park, crossing the main avenue by the
+fountain in the center.", 
+  "The museum’s new exhibit features ancient artifacts from various civilizations around the world.",
+  "He carefully examined the document, looking for any clues that might help solve the mystery.",
+  "The students gathered in the auditorium to listen to the guest speaker’s inspiring lecture.", 
+  "Feeling vexed after an arduous and zany day at work, she hoped for a peaceful and quiet evening
+at home, cozying up after a quick dinner with some TV, or maybe a book on her upcoming visit to
+Auckland.",
+  "The chef demonstrated how to prepare a delicious meal using only locally sourced ingredients, focusing
+mainly on some excellent dinner recipes from Spain.",
+  "They watched the sunset from the hilltop, marveling at the beautiful array of colors in the sky.",
+  "The committee reviewed the proposal and provided many points of useful feedback to improve the
+project’s effectiveness.",
+  "Despite the challenges faced during the project, the team worked tirelessly to ensure its successful
+completion, resulting in a product that exceeded everyone’s expectations."
+)
+
+test_chi2 <- sapply(test_sentences, calculate_chi_squared, freq_table = letter_frequencies)
+
+p_value <- sapply(test_chi2, function(x) {
+  mean(brown_sentence_frequency$chi2_values >= x, na.rm = TRUE)
+})
+
+results <- tibble(
+  sentence = 1:10,
+  p_values = round(p_value, 3)
+)
+
+kable(results, caption = "P-Values for Sentences")
+```
+
+The sentence with the watermark is sentence 6, "Feeling vexed after an arduous and zany day at work, she hoped for a peaceful and quiet evening at home, cozying up after a quick dinner with some TV, or maybe a book on her upcoming visit to Auckland." I am able to tell that it is this sentence because as shown above in the table, sentence 6 has the smallest p-value. When looking at the table all of the p-values are above 0.05 except for sentence 6. This shows that the probability for a sentence to have a frequency that is like sentence 6 is much less then the rest which shows that this was the sentence with the watermark. 
